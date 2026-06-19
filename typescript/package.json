@@ -1,0 +1,56 @@
+{
+  "name": "openai-ads-mcp",
+  "version": "0.1.0",
+  "description": "Typed MCP server for OpenAI's Advertiser API",
+  "type": "module",
+  "license": "MIT",
+  "author": "Trakkr <hello@trakkr.ai>",
+  "homepage": "https://trakkr.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/macklpgr/openai-ads-mcp.git",
+    "directory": "typescript"
+  },
+  "keywords": [
+    "mcp",
+    "openai",
+    "ads",
+    "advertising",
+    "trakkr"
+  ],
+  "bin": {
+    "openai-ads-mcp": "dist/index.js"
+  },
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "check:openapi": "node scripts/check-openapi-drift.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

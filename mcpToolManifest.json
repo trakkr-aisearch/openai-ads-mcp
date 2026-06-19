@@ -1,0 +1,31 @@
+{
+  "tools": [
+    { "name": "get_account", "group": "Account" },
+    { "name": "list_campaigns", "group": "Campaigns" },
+    { "name": "get_campaign", "group": "Campaigns" },
+    { "name": "create_campaign", "group": "Campaigns" },
+    { "name": "update_campaign", "group": "Campaigns" },
+    { "name": "set_campaign_state", "group": "Campaigns" },
+    { "name": "list_ad_groups", "group": "AdGroups" },
+    { "name": "get_ad_group", "group": "AdGroups" },
+    { "name": "create_ad_group", "group": "AdGroups" },
+    { "name": "update_ad_group", "group": "AdGroups" },
+    { "name": "set_ad_group_state", "group": "AdGroups" },
+    { "name": "list_ads", "group": "Ads" },
+    { "name": "get_ad", "group": "Ads" },
+    { "name": "upload_creative", "group": "Ads" },
+    { "name": "create_ad", "group": "Ads" },
+    { "name": "update_ad", "group": "Ads" },
+    { "name": "set_ad_state", "group": "Ads" },
+    { "name": "get_insights", "group": "Insights" },
+    { "name": "list_audiences", "group": "Audiences" },
+    { "name": "get_audience", "group": "Audiences" },
+    { "name": "search_geo", "group": "Audiences" },
+    { "name": "manage_audience", "group": "Audiences" },
+    { "name": "manage_conversions", "group": "Conversions" },
+    { "name": "send_conversions", "group": "Conversions" },
+    { "name": "build_campaign", "group": "Helpers" },
+    { "name": "draft_context_hints", "group": "Helpers" },
+    { "name": "bulk_ab_test_hints", "group": "Helpers" }
+  ]
+}
