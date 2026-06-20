@@ -1,0 +1,12 @@
+.git
+.github
+**/.DS_Store
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/dist
+python/.venv
+python/build
+python/dist
+typescript/npm-debug.log*

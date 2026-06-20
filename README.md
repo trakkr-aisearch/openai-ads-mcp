@@ -145,6 +145,17 @@ args = ["openai-ads-mcp"]
 env = { OPENAI_ADS_API_KEY = "your_ads_key_here", OPENAI_ADS_MCP_READONLY = "1" }
 ```
 
+### Docker
+
+The repository includes a root `Dockerfile` for directories and scanners that build MCP servers directly from source:
+
+```bash
+docker build -t openai-ads-mcp .
+docker run --rm -i -e OPENAI_ADS_MCP_READONLY=1 openai-ads-mcp
+```
+
+The container starts the stdio MCP transport by default so MCP registries can introspect tools, resources, and prompts. For local use, pass `OPENAI_ADS_API_KEY` and keep `OPENAI_ADS_MCP_READONLY=1` for first connection.
+
 ## Streamable HTTP
 
 The Node runtime can also serve MCP over Streamable HTTP for hosted or team deployments:
