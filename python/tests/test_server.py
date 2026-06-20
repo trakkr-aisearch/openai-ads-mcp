@@ -577,11 +577,12 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_client_friendly_error_mapping(self):
         async def handler(request: httpx.Request) -> httpx.Response:
+            assert str(request.url) == "https://ads.test/v1/ad_account"
             return httpx.Response(401, json={"message": "bad key"}, request=request)
 
-        client = OpenAIAdsClient("test", base_url="https://ads.test")
+        client = OpenAIAdsClient("test", base_url="https://ads.test/v1")
         await client._client.aclose()
-        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://ads.test")
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://ads.test/v1")
         try:
             with pytest.raises(OpenAIAdsAPIError) as excinfo:
                 await client.get("/ad_account")

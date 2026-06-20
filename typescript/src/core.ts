@@ -1,8 +1,10 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { ZodRawShape } from "zod";
 
-import { OpenAIAdsAPIError, OpenAIAdsClient, type JsonRecord } from "./client.js";
+import { API_BASE_URL, OpenAIAdsAPIError, OpenAIAdsClient, type JsonRecord } from "./client.js";
 
 export type { JsonRecord } from "./client.js";
 
@@ -27,6 +29,15 @@ const HEAVY_FIELDS = new Set(["raw", "raw_response", "raw_results", "html", "req
 export type AdsClientLike = Pick<OpenAIAdsClient, "get" | "post" | "uploadFile" | "postConversions">;
 export type ToolArgs = Record<string, unknown>;
 export type ToolHandler = (args: ToolArgs) => Promise<string>;
+export type RequestAuth = {
+  openaiAdsApiKey?: string;
+  openaiAdsApiBaseUrl?: string;
+};
+type ToolExtra = {
+  authInfo?: {
+    extra?: Record<string, unknown>;
+  };
+};
 
 export interface AdsToolDefinition {
   name: string;
@@ -41,6 +52,7 @@ export interface AdsToolDefinition {
 }
 
 let clientFactory: () => AdsClientLike = () => OpenAIAdsClient.fromEnv();
+const requestAuth = new AsyncLocalStorage<RequestAuth>();
 
 export function setClientFactoryForTests(factory: () => AdsClientLike): void {
   clientFactory = factory;
@@ -52,6 +64,15 @@ export function resetClientFactoryForTests(): void {
 
 export function getClientOrError(): { client?: AdsClientLike; error?: string } {
   try {
+    const scopedAuth = requestAuth.getStore();
+    if (scopedAuth?.openaiAdsApiKey) {
+      return {
+        client: new OpenAIAdsClient(
+          scopedAuth.openaiAdsApiKey,
+          scopedAuth.openaiAdsApiBaseUrl ?? process.env.OPENAI_ADS_API_BASE_URL ?? API_BASE_URL,
+        ),
+      };
+    }
     return { client: clientFactory() };
   } catch (error) {
     return {
@@ -62,6 +83,10 @@ export function getClientOrError(): { client?: AdsClientLike; error?: string } {
       ),
     };
   }
+}
+
+export function runWithRequestAuth<T>(auth: RequestAuth | undefined, callback: () => Promise<T>): Promise<T> {
+  return requestAuth.run(auth ?? {}, callback);
 }
 
 export function isReadonlyMode(): boolean {
@@ -94,8 +119,27 @@ export function registerAdsTool(server: McpServer, definition: AdsToolDefinition
       inputSchema: definition.inputSchema,
       annotations,
     },
-    async (args): Promise<CallToolResult> => textResult(await definition.handler(args as ToolArgs)),
+    async (args, extra: ToolExtra): Promise<CallToolResult> =>
+      textResult(
+        await runWithRequestAuth(requestAuthFromExtra(extra), () =>
+          definition.handler(args as ToolArgs),
+        ),
+      ),
   );
+}
+
+function requestAuthFromExtra(extra?: ToolExtra): RequestAuth | undefined {
+  const rawApiKey = extra?.authInfo?.extra?.openaiAdsApiKey;
+  const rawBaseUrl = extra?.authInfo?.extra?.openaiAdsApiBaseUrl;
+  const openaiAdsApiKey = typeof rawApiKey === "string" ? rawApiKey.trim() : "";
+  const openaiAdsApiBaseUrl = typeof rawBaseUrl === "string" ? rawBaseUrl.trim() : "";
+  if (!openaiAdsApiKey && !openaiAdsApiBaseUrl) {
+    return undefined;
+  }
+  return {
+    ...(openaiAdsApiKey ? { openaiAdsApiKey } : {}),
+    ...(openaiAdsApiBaseUrl ? { openaiAdsApiBaseUrl } : {}),
+  };
 }
 
 export function textResult(text: string): CallToolResult {

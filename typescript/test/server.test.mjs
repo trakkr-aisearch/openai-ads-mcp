@@ -17,8 +17,10 @@ import {
 import {
   handleApiError,
   resetClientFactoryForTests,
+  runWithRequestAuth,
   setClientFactoryForTests,
 } from "../dist/core.js";
+import { startHttpServer } from "../dist/http.js";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const manifest = JSON.parse(await readFile(new URL("../../mcpToolManifest.json", import.meta.url), "utf8"));
@@ -170,6 +172,8 @@ beforeEach(() => {
   originalFetch = globalThis.fetch;
   delete process.env.OPENAI_ADS_MCP_READONLY;
   delete process.env.OPENAI_ADS_BUDGET_CEILING_USD;
+  delete process.env.OPENAI_ADS_MCP_HTTP_ALLOW_WRITES;
+  delete process.env.OPENAI_ADS_MCP_HTTP_TOKEN;
 });
 
 afterEach(() => {
@@ -177,6 +181,8 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   delete process.env.OPENAI_ADS_MCP_READONLY;
   delete process.env.OPENAI_ADS_BUDGET_CEILING_USD;
+  delete process.env.OPENAI_ADS_MCP_HTTP_ALLOW_WRITES;
+  delete process.env.OPENAI_ADS_MCP_HTTP_TOKEN;
 });
 
 test("tool names match the shared manifest and Python arg names", () => {
@@ -230,6 +236,55 @@ test("stdio readonly server lists only read tools", async () => {
     assert.equal([...names].some((name) => expectedWriteTools.has(name)), false);
   } finally {
     await client.close();
+  }
+});
+
+test("request-scoped HTTP auth can supply the Ads API key", async () => {
+  resetClientFactoryForTests();
+  delete process.env.OPENAI_ADS_API_KEY;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://api.ads.openai.com/v1/ad_account");
+    assert.equal(init.headers.get("Authorization"), "Bearer ads_req_key");
+    return new Response(JSON.stringify({ id: "acct_1", name: "Test account" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const result = JSON.parse(
+    await runWithRequestAuth({ openaiAdsApiKey: "ads_req_key" }, () => tool("get_account").handler({})),
+  );
+  assert.equal(result.id, "acct_1");
+});
+
+test("http transport starts read-only by default and exposes health", async () => {
+  const handle = await startHttpServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const response = await fetch(handle.url.replace("/mcp", "/healthz"));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.transport, "streamable-http");
+    assert.equal(body.readonly, true);
+    assert.equal(process.env.OPENAI_ADS_MCP_READONLY, "1");
+  } finally {
+    await handle.close();
+  }
+});
+
+test("http transport rejects missing hosted bearer token", async () => {
+  process.env.OPENAI_ADS_MCP_HTTP_TOKEN = "hosted_secret";
+  const handle = await startHttpServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const response = await fetch(handle.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "unauthorized" });
+  } finally {
+    await handle.close();
   }
 });
 
@@ -539,8 +594,11 @@ test("error mapping returns soft failures and raises hard failures", () => {
 });
 
 test("client maps 401 to a friendly API key error", async () => {
-  globalThis.fetch = async () => new Response(JSON.stringify({ message: "bad key" }), { status: 401 });
-  const client = new OpenAIAdsClient("test", "https://ads.test");
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), "https://ads.test/v1/ad_account");
+    return new Response(JSON.stringify({ message: "bad key" }), { status: 401 });
+  };
+  const client = new OpenAIAdsClient("test", "https://ads.test/v1");
   await assert.rejects(
     () => client.get("/ad_account"),
     (error) => error instanceof OpenAIAdsAPIError &&

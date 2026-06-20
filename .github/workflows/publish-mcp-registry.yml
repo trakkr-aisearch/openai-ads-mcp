@@ -1,0 +1,49 @@
+name: Publish MCP Registry metadata
+
+on:
+  push:
+    tags:
+      - "openai-ads-mcp-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-mcp-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Wait for npm and PyPI packages
+        run: |
+          set -euo pipefail
+          VERSION="$(jq -r '.version' server.json)"
+          for attempt in $(seq 1 60); do
+            npm_ok=0
+            pypi_ok=0
+            npm view "openai-ads-mcp@$VERSION" version >/dev/null 2>&1 && npm_ok=1
+            curl -fsS "https://pypi.org/pypi/openai-ads-mcp/$VERSION/json" >/dev/null 2>&1 && pypi_ok=1
+            if [ "$npm_ok" = "1" ] && [ "$pypi_ok" = "1" ]; then
+              echo "Found openai-ads-mcp $VERSION on npm and PyPI."
+              exit 0
+            fi
+            echo "Waiting for package publication for $VERSION ($attempt/60)."
+            sleep 10
+          done
+          echo "Timed out waiting for openai-ads-mcp $VERSION on npm and PyPI." >&2
+          exit 1
+
+      - name: Install MCP Publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/download/latest/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Publish to MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

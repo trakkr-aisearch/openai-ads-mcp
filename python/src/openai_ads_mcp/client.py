@@ -97,7 +97,7 @@ class OpenAIAdsClient:
         redact_detail: bool = False,
     ) -> dict:
         try:
-            resp = await client.request(method, path, params=params, json=json, files=files)
+            resp = await client.request(method, path.lstrip("/"), params=params, json=json, files=files)
             resp.raise_for_status()
             if not resp.content:
                 return {}

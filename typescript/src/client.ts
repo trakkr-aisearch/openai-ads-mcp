@@ -4,7 +4,7 @@ import { basename } from "node:path";
 export const API_BASE_URL = "https://api.ads.openai.com/v1";
 export const CONVERSIONS_BASE_URL = "https://bzr.openai.com/v1";
 
-const USER_AGENT = "openai-ads-mcp/0.1.2";
+const USER_AGENT = "openai-ads-mcp/0.1.3";
 
 const FRIENDLY_ERRORS: Record<number, string> = {
   401: "Invalid or expired OPENAI_ADS_API_KEY.",
@@ -139,7 +139,7 @@ async function toApiError(response: Response, redactDetail: boolean): Promise<Op
 }
 
 function buildUrl(baseUrl: string, path: string, params?: JsonRecord): string {
-  const url = new URL(path, `${baseUrl}/`);
+  const url = new URL(path.replace(/^\/+/, ""), `${baseUrl}/`);
   for (const [key, value] of Object.entries(params ?? {})) {
     if (value === undefined || value === null) {
       continue;

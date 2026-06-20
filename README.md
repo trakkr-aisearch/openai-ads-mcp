@@ -87,6 +87,16 @@ Optional environment variables:
 | `OPENAI_ADS_MCP_READONLY` | Set to `1` or `true` to register read tools only. |
 | `OPENAI_ADS_BUDGET_CEILING_USD` | Optional budget guard. Default `100`. |
 
+## Discovery Metadata
+
+This repo includes `server.json` for the official MCP Registry and downstream MCP directories. The canonical registry name is:
+
+```text
+io.github.trakkr-aisearch/openai-ads-mcp
+```
+
+The Node package includes the matching `mcpName`, and the Python package README includes the matching `mcp-name` marker for PyPI ownership verification.
+
 ## MCP client examples
 
 ### Claude Code, Python runtime
@@ -134,6 +144,36 @@ command = "uvx"
 args = ["openai-ads-mcp"]
 env = { OPENAI_ADS_API_KEY = "your_ads_key_here", OPENAI_ADS_MCP_READONLY = "1" }
 ```
+
+## Streamable HTTP
+
+The Node runtime can also serve MCP over Streamable HTTP for hosted or team deployments:
+
+```bash
+export OPENAI_ADS_MCP_HTTP_TOKEN="choose_a_long_random_token"
+npx -y openai-ads-mcp --http
+```
+
+Defaults:
+
+- URL: `http://127.0.0.1:8080/mcp` locally, or `https://your-host/mcp` behind a proxy.
+- Health check: `GET /healthz`.
+- Remote mode forces `OPENAI_ADS_MCP_READONLY=1` unless `OPENAI_ADS_MCP_HTTP_ALLOW_WRITES=1` is set.
+- `OPENAI_ADS_MCP_HTTP_TOKEN` protects the MCP endpoint with `Authorization: Bearer <token>`.
+- Clients may send `X-OpenAI-Ads-API-Key` per request, or the server can use a server-side `OPENAI_ADS_API_KEY`.
+
+Useful hosted env vars:
+
+| Variable | Purpose |
+| --- | --- |
+| `PORT` or `OPENAI_ADS_MCP_HTTP_PORT` | HTTP port. Default `8080`. |
+| `OPENAI_ADS_MCP_HTTP_PATH` | MCP path. Default `/mcp`. |
+| `OPENAI_ADS_MCP_HEALTH_PATH` | Health path. Default `/healthz`. |
+| `OPENAI_ADS_MCP_HTTP_TOKEN` | Optional bearer token required by hosted clients. |
+| `OPENAI_ADS_MCP_HTTP_ALLOW_WRITES` | Set to `1` only when you want write tools exposed over HTTP. |
+| `OPENAI_ADS_MCP_HTTP_CORS_ORIGIN` | Optional CORS origin. Default `*`. |
+
+For public hosted endpoints, keep writes disabled by default and inject Ads API keys server-side through your own OAuth or credential vault. Do not put a shared Ads API key in browser-visible config.
 
 ## Tool Surface
 

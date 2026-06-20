@@ -21,6 +21,7 @@ The public repo holds both runtimes:
 - `openapi.json`: shared vendored OpenAI Ads API reference
 - `README.md`: shared funnel and usage docs
 - `.github/workflows/`: PyPI, npm, and OpenAPI drift checks
+- `server.json`: official MCP Registry metadata
 
 ## Trusted Publishing Setup
 
@@ -41,12 +42,19 @@ npm trusted publishing:
 
 No PyPI or npm tokens should be stored in GitHub.
 
+MCP Registry publishing:
+
+- Server name: `io.github.trakkr-aisearch/openai-ads-mcp`
+- Workflow file: `publish-mcp-registry.yml`
+- Auth: GitHub OIDC through `mcp-publisher login github-oidc`
+- Required package markers: npm `mcpName`, PyPI README `mcp-name`
+
 ## Source-of-Truth Model
 
 1. Source code is edited here in `services/openai-ads-mcp`.
 2. Releases happen from the dedicated public repo only.
 3. The vendored OpenAPI reference is the shared `openapi.json` in the repo root.
-4. Both release workflows trigger on tags matching `openai-ads-mcp-v*`.
+4. Package and MCP Registry workflows trigger on tags matching `openai-ads-mcp-v*`.
 5. A real funded OpenAI Ads account is needed to validate live writes end to end. Reads can be validated with any valid OpenAI Ads API key.
 
 ## Sync and Release Flow
@@ -98,8 +106,10 @@ git push origin openai-ads-mcp-vX.Y.Z
 5. Confirm release.
 
 - GitHub Actions succeeds for Python, npm, and OpenAPI drift.
+- MCP Registry workflow succeeds after npm and PyPI have the matching version.
 - Python package is visible at `https://pypi.org/project/openai-ads-mcp/`.
 - npm package is visible at `https://www.npmjs.com/package/openai-ads-mcp`.
+- Registry metadata is visible from `https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.trakkr-aisearch/openai-ads-mcp`.
 
 ## Manual Smoke Test
 
