@@ -38,7 +38,7 @@ export function createOpenAIAdsMcpServer(): McpServer {
   const server = new McpServer(
     {
       name: "OpenAI Ads",
-      version: "0.1.1",
+      version: "0.1.2",
     },
     {
       instructions: INSTRUCTIONS,
