@@ -20,6 +20,7 @@ import {
   runWithRequestAuth,
   setClientFactoryForTests,
 } from "../dist/core.js";
+import { resetHostedStateForTests, safeSummary } from "../dist/hosted.js";
 import { startHttpServer } from "../dist/http.js";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -166,14 +167,45 @@ async function callTool(name, args = {}) {
   return JSON.parse(await tool(name).handler(args));
 }
 
+async function postJson(url, body, headers = {}) {
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json, text/event-stream",
+      "Content-Type": "application/json",
+      "Mcp-Protocol-Version": "2025-06-18",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function readMcpJson(response) {
+  const text = await response.text();
+  if (text.startsWith("event:")) {
+    const dataLine = text.split("\n").find((line) => line.startsWith("data: "));
+    assert.ok(dataLine, `Missing MCP data line in ${text}`);
+    return JSON.parse(dataLine.slice("data: ".length));
+  }
+  return JSON.parse(text);
+}
+
 beforeEach(() => {
   mockClient = makeMockClient();
   setClientFactoryForTests(() => mockClient);
   originalFetch = globalThis.fetch;
+  resetHostedStateForTests();
   delete process.env.OPENAI_ADS_MCP_READONLY;
   delete process.env.OPENAI_ADS_BUDGET_CEILING_USD;
   delete process.env.OPENAI_ADS_MCP_HTTP_ALLOW_WRITES;
   delete process.env.OPENAI_ADS_MCP_HTTP_TOKEN;
+  delete process.env.OPENAI_ADS_MCP_HOSTED_PUBLIC;
+  delete process.env.OPENAI_ADS_MCP_HOSTED_DISABLED;
+  delete process.env.OPENAI_ADS_MCP_TELEMETRY_SALT;
+  delete process.env.OPENAI_ADS_MCP_EDGE_SECRET;
+  delete process.env.OPENAI_ADS_MCP_GLOBAL_TOOL_CALLS_PER_DAY;
+  delete process.env.OPENAI_ADS_API_KEY;
+  delete process.env.OPENAI_ADS_API_BASE_URL;
 });
 
 afterEach(() => {
@@ -183,6 +215,13 @@ afterEach(() => {
   delete process.env.OPENAI_ADS_BUDGET_CEILING_USD;
   delete process.env.OPENAI_ADS_MCP_HTTP_ALLOW_WRITES;
   delete process.env.OPENAI_ADS_MCP_HTTP_TOKEN;
+  delete process.env.OPENAI_ADS_MCP_HOSTED_PUBLIC;
+  delete process.env.OPENAI_ADS_MCP_HOSTED_DISABLED;
+  delete process.env.OPENAI_ADS_MCP_TELEMETRY_SALT;
+  delete process.env.OPENAI_ADS_MCP_EDGE_SECRET;
+  delete process.env.OPENAI_ADS_MCP_GLOBAL_TOOL_CALLS_PER_DAY;
+  delete process.env.OPENAI_ADS_API_KEY;
+  delete process.env.OPENAI_ADS_API_BASE_URL;
 });
 
 test("tool names match the shared manifest and Python arg names", () => {
@@ -286,6 +325,172 @@ test("http transport rejects missing hosted bearer token", async () => {
   } finally {
     await handle.close();
   }
+});
+
+test("hosted public mode refuses write-enabled and server-key startup", async () => {
+  process.env.OPENAI_ADS_MCP_HOSTED_PUBLIC = "1";
+  process.env.OPENAI_ADS_MCP_TELEMETRY_SALT = "test_salt";
+  process.env.OPENAI_ADS_MCP_HTTP_ALLOW_WRITES = "1";
+  await assert.rejects(
+    () => startHttpServer({ host: "127.0.0.1", port: 0 }),
+    /OPENAI_ADS_MCP_HTTP_ALLOW_WRITES/,
+  );
+
+  delete process.env.OPENAI_ADS_MCP_HTTP_ALLOW_WRITES;
+  process.env.OPENAI_ADS_API_KEY = "server_key";
+  await assert.rejects(
+    () => startHttpServer({ host: "127.0.0.1", port: 0 }),
+    /OPENAI_ADS_API_KEY must not be set/,
+  );
+});
+
+test("hosted public mode exposes health, server card, and read-only tools", async () => {
+  process.env.OPENAI_ADS_MCP_HOSTED_PUBLIC = "1";
+  process.env.OPENAI_ADS_MCP_TELEMETRY_SALT = "test_salt";
+  const handle = await startHttpServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const health = await fetch(handle.url.replace("/mcp", "/healthz"));
+    assert.equal(health.status, 200);
+    const healthBody = await health.json();
+    assert.equal(healthBody.hosted_public, true);
+    assert.equal(healthBody.readonly, true);
+    const healthAlias = await fetch(handle.url.replace("/mcp", "/health"));
+    assert.equal(healthAlias.status, 200);
+
+    const card = await fetch(handle.url.replace("/mcp", "/.well-known/mcp/server-card.json"));
+    assert.equal(card.status, 200);
+    const cardBody = await card.json();
+    assert.equal(cardBody.transport.url, "https://openai-ads-mcp.trakkr.ai/mcp");
+    assert.equal(cardBody.capabilities.writes, false);
+
+    const init = await postJson(handle.url, {
+      jsonrpc: "2.0",
+      id: 0,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test", version: "0" },
+      },
+    });
+    assert.equal(init.status, 200);
+    const initBody = await readMcpJson(init);
+    assert.equal(initBody.result.serverInfo.version, "0.1.6");
+
+    const list = await postJson(handle.url, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    assert.equal(list.status, 200);
+    const listBody = await readMcpJson(list);
+    const names = new Set(listBody.result.tools.map((item) => item.name));
+    assert.ok(names.has("get_account"));
+    assert.ok(!names.has("create_campaign"));
+    assert.equal([...names].some((name) => expectedWriteTools.has(name)), false);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("hosted public mode rejects base-url overrides, oversized bodies, and disabled MCP calls", async () => {
+  process.env.OPENAI_ADS_MCP_HOSTED_PUBLIC = "1";
+  process.env.OPENAI_ADS_MCP_TELEMETRY_SALT = "test_salt";
+  const handle = await startHttpServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const baseUrlOverride = await postJson(
+      handle.url,
+      { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
+      { "X-OpenAI-Ads-API-Base-Url": "https://evil.example" },
+    );
+    assert.equal(baseUrlOverride.status, 400);
+    assert.deepEqual(await baseUrlOverride.json(), { error: "openai_ads_api_base_url_not_allowed" });
+
+    const oversized = await fetch(handle.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: "x".repeat(260 * 1024) }),
+    });
+    assert.equal(oversized.status, 413);
+  } finally {
+    await handle.close();
+  }
+
+  process.env.OPENAI_ADS_MCP_HOSTED_DISABLED = "1";
+  const disabledHandle = await startHttpServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const disabled = await postJson(disabledHandle.url, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    assert.equal(disabled.status, 503);
+    const health = await fetch(disabledHandle.url.replace("/mcp", "/healthz"));
+    const healthBody = await health.json();
+    assert.equal(healthBody.disabled, true);
+  } finally {
+    await disabledHandle.close();
+  }
+});
+
+test("hosted public mode allows discovery without key but tool calls need a per-request key", async () => {
+  resetClientFactoryForTests();
+  process.env.OPENAI_ADS_MCP_HOSTED_PUBLIC = "1";
+  process.env.OPENAI_ADS_MCP_TELEMETRY_SALT = "test_salt";
+  const handle = await startHttpServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const list = await postJson(handle.url, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    assert.equal(list.status, 200);
+
+    const call = await postJson(handle.url, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "get_account", arguments: {} },
+    });
+    assert.equal(call.status, 200);
+    const body = await readMcpJson(call);
+    const toolText = body.result.content[0].text;
+    assert.match(toolText, /X-OpenAI-Ads-API-Key/);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("hosted public mode rate-limits repeated tool calls before transport handling", async () => {
+  process.env.OPENAI_ADS_MCP_HOSTED_PUBLIC = "1";
+  process.env.OPENAI_ADS_MCP_TELEMETRY_SALT = "test_salt";
+  const handle = await startHttpServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const body = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "get_account", arguments: {} },
+    };
+    const statuses = [];
+    for (let index = 0; index < 6; index += 1) {
+      const response = await postJson(handle.url, body);
+      statuses.push(response.status);
+    }
+    assert.equal(statuses.at(-1), 429);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("safe telemetry summaries hash campaign and ad text instead of storing plaintext", () => {
+  process.env.OPENAI_ADS_MCP_TELEMETRY_SALT = "test_salt";
+  const summary = safeSummary({
+    name: "Secret Campaign Name",
+    status: "paused",
+    budget_usd: 25,
+    ads: [{
+      name: "Secret Ad Name",
+      title: "Secret Headline",
+      body: "Secret ad body text",
+      target_url: "https://trakkr.ai/demo?utm=secret",
+    }],
+  });
+  const serialised = JSON.stringify(summary);
+  assert.match(serialised, /text_fields/);
+  assert.match(serialised, /trakkr\.ai/);
+  assert.doesNotMatch(serialised, /Secret Campaign Name/);
+  assert.doesNotMatch(serialised, /Secret Ad Name/);
+  assert.doesNotMatch(serialised, /Secret Headline/);
+  assert.doesNotMatch(serialised, /Secret ad body text/);
 });
 
 test("auth and read tools call the expected endpoints", async () => {

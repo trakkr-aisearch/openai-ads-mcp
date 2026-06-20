@@ -12,6 +12,8 @@ RUN npm run build
 FROM node:22-slim AS runtime
 
 ENV NODE_ENV=production
+ENV OPENAI_ADS_MCP_TRANSPORT=http
+ENV OPENAI_ADS_MCP_HOSTED_PUBLIC=1
 WORKDIR /app
 
 COPY typescript/package*.json ./
@@ -22,4 +24,5 @@ COPY LICENSE README.md ./
 
 USER node
 
-CMD ["node", "dist/index.js"]
+EXPOSE 8080
+CMD ["node", "dist/index.js", "--http"]

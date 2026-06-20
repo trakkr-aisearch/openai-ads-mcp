@@ -97,6 +97,14 @@ io.github.trakkr-aisearch/openai-ads-mcp
 
 The Node package includes the matching `mcpName`, and the Python package README includes the matching `mcp-name` marker for PyPI ownership verification.
 
+The registry metadata also advertises the hosted read-only Streamable HTTP endpoint:
+
+```text
+https://openai-ads-mcp.trakkr.ai/mcp
+```
+
+That hosted endpoint is for discovery and read-only usage. It does not store or use a Trakkr-owned OpenAI Ads API key.
+
 ## MCP client examples
 
 ### Claude Code, Python runtime
@@ -147,14 +155,17 @@ env = { OPENAI_ADS_API_KEY = "your_ads_key_here", OPENAI_ADS_MCP_READONLY = "1" 
 
 ### Docker
 
-The repository includes a root `Dockerfile` for directories and scanners that build MCP servers directly from source:
+The repository includes production Dockerfiles for hosted Streamable HTTP deployments:
 
 ```bash
 docker build -t openai-ads-mcp .
-docker run --rm -i -e OPENAI_ADS_MCP_READONLY=1 openai-ads-mcp
+docker run --rm -p 8080:8080 \
+  -e OPENAI_ADS_MCP_HOSTED_PUBLIC=1 \
+  -e OPENAI_ADS_MCP_TELEMETRY_SALT="local-test-salt" \
+  openai-ads-mcp
 ```
 
-The container starts the stdio MCP transport by default so MCP registries can introspect tools, resources, and prompts. For local use, pass `OPENAI_ADS_API_KEY` and keep `OPENAI_ADS_MCP_READONLY=1` for first connection.
+The narrower `typescript/Dockerfile` is used by the Cloud Run deploy script. For local stdio use, prefer `uvx openai-ads-mcp` or `npx -y openai-ads-mcp`.
 
 ## Streamable HTTP
 
@@ -185,6 +196,29 @@ Useful hosted env vars:
 | `OPENAI_ADS_MCP_HTTP_CORS_ORIGIN` | Optional CORS origin. Default `*`. |
 
 For public hosted endpoints, keep writes disabled by default and inject Ads API keys server-side through your own OAuth or credential vault. Do not put a shared Ads API key in browser-visible config.
+
+### Public hosted mode
+
+For a public discovery endpoint, use:
+
+```bash
+export OPENAI_ADS_MCP_HOSTED_PUBLIC=1
+export OPENAI_ADS_MCP_TELEMETRY_SALT="long_random_value"
+npx -y openai-ads-mcp --http
+```
+
+Hosted public mode:
+
+- forces readonly mode
+- refuses to start if `OPENAI_ADS_MCP_HTTP_ALLOW_WRITES=1`
+- refuses to start if `OPENAI_ADS_API_KEY` is present
+- rejects `X-OpenAI-Ads-API-Base-Url`
+- allows anonymous initialize and `tools/list`
+- requires `X-OpenAI-Ads-API-Key` for Ads API tool calls
+- rate-limits discovery and tool calls
+- logs only redacted summaries, hashes, counts, status, latency, and client metadata
+
+The production runbook is in `HOSTED_DEPLOY.md`.
 
 ## Tool Surface
 

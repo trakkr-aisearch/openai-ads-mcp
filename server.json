@@ -3,18 +3,32 @@
   "name": "io.github.trakkr-aisearch/openai-ads-mcp",
   "title": "OpenAI Ads MCP",
   "description": "OpenAI and ChatGPT Ads tools for campaigns, creatives, audiences, and insights.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "websiteUrl": "https://trakkr.ai",
   "repository": {
     "url": "https://github.com/trakkr-aisearch/openai-ads-mcp",
     "source": "github",
     "id": "1274750114"
   },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://openai-ads-mcp.trakkr.ai/mcp",
+      "headers": [
+        {
+          "name": "X-OpenAI-Ads-API-Key",
+          "description": "OpenAI Ads API key from Ads Manager. Required for Ads API tool calls; discovery works without it.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "identifier": "openai-ads-mcp",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -44,7 +58,7 @@
     {
       "registryType": "pypi",
       "identifier": "openai-ads-mcp",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

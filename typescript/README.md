@@ -34,6 +34,8 @@ npx -y openai-ads-mcp --http
 
 The MCP endpoint is `/mcp`, the health endpoint is `/healthz`, and remote mode is read-only by default. Set `OPENAI_ADS_MCP_HTTP_ALLOW_WRITES=1` only when write tools should be visible over HTTP. Clients can pass `X-OpenAI-Ads-API-Key` per request, or the server can use a server-side `OPENAI_ADS_API_KEY`.
 
+For public hosted endpoints, use `OPENAI_ADS_MCP_HOSTED_PUBLIC=1`. Hosted public mode forces readonly mode, rejects server-side `OPENAI_ADS_API_KEY`, blocks `X-OpenAI-Ads-API-Base-Url`, requires `OPENAI_ADS_MCP_TELEMETRY_SALT`, exposes `/.well-known/mcp/server-card.json`, and logs only redacted summaries.
+
 ## Environment
 
 | Variable | Purpose |
@@ -44,5 +46,9 @@ The MCP endpoint is `/mcp`, the health endpoint is `/healthz`, and remote mode i
 | `OPENAI_ADS_BUDGET_CEILING_USD` | Optional budget guard. Default `100`. |
 | `OPENAI_ADS_MCP_HTTP_TOKEN` | Optional bearer token for hosted HTTP mode. |
 | `OPENAI_ADS_MCP_HTTP_ALLOW_WRITES` | Set to `1` to expose write tools in HTTP mode. |
+| `OPENAI_ADS_MCP_HOSTED_PUBLIC` | Set to `1` for the public read-only hosted endpoint safety profile. |
+| `OPENAI_ADS_MCP_TELEMETRY_SALT` | Required in hosted public mode for IP, API-key, and text hashes. |
+| `OPENAI_ADS_MCP_HOSTED_DISABLED` | Set to `1` to make `/mcp` return `503` while `/healthz` remains available. |
+| `OPENAI_ADS_MCP_EDGE_SECRET` | Optional shared secret expected in `X-Trakkr-Edge-Secret` when a Worker is in front. |
 
 Full docs live in the repository root README.

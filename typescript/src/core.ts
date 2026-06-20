@@ -5,6 +5,7 @@ import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/
 import type { ZodRawShape } from "zod";
 
 import { API_BASE_URL, OpenAIAdsAPIError, OpenAIAdsClient, type JsonRecord } from "./client.js";
+import { emitToolTelemetry, type HostedRequestContext } from "./hosted.js";
 
 export type { JsonRecord } from "./client.js";
 
@@ -32,6 +33,7 @@ export type ToolHandler = (args: ToolArgs) => Promise<string>;
 export type RequestAuth = {
   openaiAdsApiKey?: string;
   openaiAdsApiBaseUrl?: string;
+  hostedContext?: HostedRequestContext;
 };
 type ToolExtra = {
   authInfo?: {
@@ -119,27 +121,72 @@ export function registerAdsTool(server: McpServer, definition: AdsToolDefinition
       inputSchema: definition.inputSchema,
       annotations,
     },
-    async (args, extra: ToolExtra): Promise<CallToolResult> =>
-      textResult(
-        await runWithRequestAuth(requestAuthFromExtra(extra), () =>
-          definition.handler(args as ToolArgs),
-        ),
-      ),
+    async (args, extra: ToolExtra): Promise<CallToolResult> => {
+      const auth = requestAuthFromExtra(extra);
+      const started = Date.now();
+      try {
+        const text = await runWithRequestAuth(auth, () => definition.handler(args as ToolArgs));
+        emitToolTelemetry({
+          context: auth?.hostedContext,
+          toolName: definition.name,
+          safetyCategory: definition.writes ? "write" : "readonly",
+          status: "ok",
+          durationMs: Date.now() - started,
+          httpStatus: 200,
+          args: args as ToolArgs,
+          resultText: text,
+        });
+        return textResult(text);
+      } catch (error) {
+        emitToolTelemetry({
+          context: auth?.hostedContext,
+          toolName: definition.name,
+          safetyCategory: definition.writes ? "write" : "readonly",
+          status: "error",
+          durationMs: Date.now() - started,
+          httpStatus: error instanceof OpenAIAdsAPIError ? mapApiErrorToHttpStatus(error.statusCode) : 500,
+          upstreamStatus: error instanceof OpenAIAdsAPIError ? error.statusCode : undefined,
+          args: args as ToolArgs,
+          errorName: error instanceof Error ? error.name : "Error",
+        });
+        throw error;
+      }
+    },
   );
 }
 
 function requestAuthFromExtra(extra?: ToolExtra): RequestAuth | undefined {
   const rawApiKey = extra?.authInfo?.extra?.openaiAdsApiKey;
   const rawBaseUrl = extra?.authInfo?.extra?.openaiAdsApiBaseUrl;
+  const rawHostedContext = extra?.authInfo?.extra?.openaiAdsMcpContext;
   const openaiAdsApiKey = typeof rawApiKey === "string" ? rawApiKey.trim() : "";
   const openaiAdsApiBaseUrl = typeof rawBaseUrl === "string" ? rawBaseUrl.trim() : "";
-  if (!openaiAdsApiKey && !openaiAdsApiBaseUrl) {
+  const hostedContext = isHostedRequestContext(rawHostedContext) ? rawHostedContext : undefined;
+  if (!openaiAdsApiKey && !openaiAdsApiBaseUrl && !hostedContext) {
     return undefined;
   }
   return {
     ...(openaiAdsApiKey ? { openaiAdsApiKey } : {}),
     ...(openaiAdsApiBaseUrl ? { openaiAdsApiBaseUrl } : {}),
+    ...(hostedContext ? { hostedContext } : {}),
   };
+}
+
+function isHostedRequestContext(value: unknown): value is HostedRequestContext {
+  return !!value &&
+    typeof value === "object" &&
+    typeof (value as HostedRequestContext).requestId === "string" &&
+    typeof (value as HostedRequestContext).hostedPublic === "boolean";
+}
+
+function mapApiErrorToHttpStatus(statusCode: number): number {
+  if (statusCode === 0) {
+    return 502;
+  }
+  if (statusCode >= 400 && statusCode <= 599) {
+    return statusCode;
+  }
+  return 500;
 }
 
 export function textResult(text: string): CallToolResult {

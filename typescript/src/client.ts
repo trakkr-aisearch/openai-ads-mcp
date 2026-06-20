@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
+import { upstreamResponseMaxBytes, upstreamTimeoutMs } from "./hosted.js";
+
 export const API_BASE_URL = "https://api.ads.openai.com/v1";
 export const CONVERSIONS_BASE_URL = "https://bzr.openai.com/v1";
 
-const USER_AGENT = "openai-ads-mcp/0.1.5";
+const USER_AGENT = "openai-ads-mcp/0.1.6";
 
 const FRIENDLY_ERRORS: Record<number, string> = {
   401: "Invalid or expired OPENAI_ADS_API_KEY.",
@@ -92,11 +94,18 @@ export class OpenAIAdsClient {
       body = JSON.stringify(options.json);
     }
     try {
-      const response = await fetch(url, { method, headers, body, redirect: "manual" });
+      const timeoutMs = upstreamTimeoutMs();
+      const response = await fetch(url, {
+        method,
+        headers,
+        body,
+        redirect: "manual",
+        ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+      });
       if (!response.ok) {
         throw await toApiError(response, options.redactDetail === true);
       }
-      const text = await response.text();
+      const text = await readLimitedText(response);
       if (!text) {
         return {};
       }
@@ -128,14 +137,44 @@ async function toApiError(response: Response, redactDetail: boolean): Promise<Op
   }
   let detail = `HTTP ${response.status}`;
   if (!redactDetail) {
+    const errorText = await readLimitedText(response);
     try {
-      const body = (await response.json()) as Record<string, unknown>;
+      const body = JSON.parse(errorText) as Record<string, unknown>;
       detail = String(body.detail ?? body.message ?? JSON.stringify(body));
     } catch {
-      detail = (await response.text()) || detail;
+      detail = errorText || detail;
     }
   }
   return new OpenAIAdsAPIError(response.status, `API error (${response.status}): ${detail}`);
+}
+
+async function readLimitedText(response: Response): Promise<string> {
+  const maxBytes = upstreamResponseMaxBytes();
+  if (!maxBytes || !response.body) {
+    return response.text();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > maxBytes) {
+        throw new OpenAIAdsAPIError(0, "OpenAI Ads API response exceeded the hosted response safety limit.");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function buildUrl(baseUrl: string, path: string, params?: JsonRecord): string {
