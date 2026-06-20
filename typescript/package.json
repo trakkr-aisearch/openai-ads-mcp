@@ -1,6 +1,6 @@
 {
   "name": "openai-ads-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typed MCP server for OpenAI's Advertiser API",
   "type": "module",
   "license": "MIT",
@@ -8,7 +8,7 @@
   "homepage": "https://trakkr.ai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/macklpgr/openai-ads-mcp.git",
+    "url": "git+https://github.com/trakkr-aisearch/openai-ads-mcp.git",
     "directory": "typescript"
   },
   "keywords": [

@@ -2,7 +2,7 @@
 
 Publishing happens from the dedicated public repository:
 
-- `https://github.com/macklpgr/openai-ads-mcp`
+- `https://github.com/trakkr-aisearch/openai-ads-mcp`
 
 Do not publish from this monorepo.
 
@@ -28,7 +28,7 @@ Configure trusted publishing before pushing the first release tag.
 
 PyPI trusted publisher:
 
-- Repository owner: `macklpgr`
+- Repository owner: `trakkr-aisearch`
 - Repository name: `openai-ads-mcp`
 - Workflow file: `publish-python.yml`
 - Environment: leave blank unless you add one later
@@ -36,7 +36,7 @@ PyPI trusted publisher:
 npm trusted publishing:
 
 - Package: `openai-ads-mcp` or the fallback scoped name
-- Repository: `macklpgr/openai-ads-mcp`
+- Repository: `trakkr-aisearch/openai-ads-mcp`
 - Workflow file: `publish-npm.yml`
 
 No PyPI or npm tokens should be stored in GitHub.
@@ -91,8 +91,8 @@ git push origin main
 4. Release both packages with the shared tag.
 
 ```bash
-git tag openai-ads-mcp-v0.1.0
-git push origin openai-ads-mcp-v0.1.0
+git tag openai-ads-mcp-vX.Y.Z
+git push origin openai-ads-mcp-vX.Y.Z
 ```
 
 5. Confirm release.
