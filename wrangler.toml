@@ -1,0 +1,8 @@
+name = "openai-ads-mcp-edge"
+main = "cloudflare-worker.js"
+compatibility_date = "2026-06-20"
+keep_vars = true
+
+routes = [
+  { pattern = "openai-ads-mcp.trakkr.ai/*", zone_name = "trakkr.ai" }
+]
