@@ -2,7 +2,7 @@
 
 Trakkr tracks the full AI-visibility funnel, organic and paid. This is the open-source paid-side companion.
 
-`openai-ads-mcp` is a typed Model Context Protocol server for OpenAI's Advertiser API. It lets Claude, Cursor, Codex, VS Code, and other MCP clients inspect Ads accounts, read performance insights, build paused campaigns, upload creatives, manage audiences, and send conversion events.
+`openai-ads-mcp` is a typed Model Context Protocol server for OpenAI Ads, ChatGPT Ads, and OpenAI's Advertiser API. It lets Claude, Cursor, Codex, VS Code, and other MCP clients inspect Ads accounts, read performance insights, build paused campaigns, upload creatives, manage audiences, and send conversion events.
 
 It ships in two runtimes with the same tool names, arguments, defaults, safety model, and vendored OpenAPI reference:
 

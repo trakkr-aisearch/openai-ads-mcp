@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "openai-ads-mcp"
-version = "0.1.3"
-description = "Typed MCP server for OpenAI's Advertiser API"
+version = "0.1.4"
+description = "Typed MCP server for OpenAI Ads and ChatGPT Ads via the Advertiser API"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "Trakkr", email = "hello@trakkr.ai" }]
-keywords = ["mcp", "openai", "ads", "advertising", "trakkr"]
+keywords = ["mcp", "mcp-server", "openai", "openai-ads", "chatgpt", "chatgpt-ads", "advertiser-api", "ads", "advertising", "ai-search", "trakkr"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

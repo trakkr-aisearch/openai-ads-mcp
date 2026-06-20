@@ -4,7 +4,7 @@ import { basename } from "node:path";
 export const API_BASE_URL = "https://api.ads.openai.com/v1";
 export const CONVERSIONS_BASE_URL = "https://bzr.openai.com/v1";
 
-const USER_AGENT = "openai-ads-mcp/0.1.3";
+const USER_AGENT = "openai-ads-mcp/0.1.4";
 
 const FRIENDLY_ERRORS: Record<number, string> = {
   401: "Invalid or expired OPENAI_ADS_API_KEY.",
