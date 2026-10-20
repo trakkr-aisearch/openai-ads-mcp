@@ -47,35 +47,23 @@ def _normalize_time_range(value: dict[str, Any]) -> tuple[dict[str, Any] | None,
     return {"type": range_type, **value[range_type]}, None
 
 
-def _one_time_range(value: Any) -> tuple[list[str] | None, str | None]:
+def _time_ranges(value: Any) -> tuple[list[str] | None, str | None]:
+    # One range only: the API answers "Multiple time_ranges entries are not yet supported."
     if value is None:
         return None, None
-    if isinstance(value, str):
-        parsed, err = _coerce_json(value, "time_range")
+    value, err = _coerce_json(value, "time_range")
+    if err:
+        return None, err
+    if isinstance(value, list) and len(value) == 1:
+        value, err = _coerce_json(value[0], "time_range")
         if err:
             return None, err
-        value = parsed
-    if isinstance(value, dict):
-        normalized, err = _normalize_time_range(value)
-        if err:
-            return None, err
-        return [json.dumps(normalized, separators=_COMPACT_SEPARATORS)], None
-    if isinstance(value, list):
-        if len(value) != 1:
-            return None, _bad_request("time_range accepts one range object.")
-        item = value[0]
-        if isinstance(item, str):
-            parsed, err = _coerce_json(item, "time_range")
-            if err:
-                return None, err
-            item = parsed
-        if not isinstance(item, dict):
-            return None, _bad_request("time_range must contain an object.")
-        normalized, err = _normalize_time_range(item)
-        if err:
-            return None, err
-        return [json.dumps(normalized, separators=_COMPACT_SEPARATORS)], None
-    return None, _bad_request("time_range must be an object or JSON object string.")
+    if not isinstance(value, dict):
+        return None, _bad_request("time_range must be one object or JSON object string. Multiple time ranges are not supported.")
+    normalized, err = _normalize_time_range(value)
+    if err:
+        return None, err
+    return [json.dumps(normalized, separators=_COMPACT_SEPARATORS)], None
 
 
 def _validate_filters(value: Any) -> tuple[list[str] | None, str | None]:
@@ -135,16 +123,21 @@ async def get_insights(
     conversions when requested by the API.
 
     Use scope='account' for account-wide reporting. For scope='campaign',
-    'ad_group', or 'ad', pass entity_id. time_range should be one JSON object,
-    for example {"type":"unix_range","start":1764547200,"end":1765152000}. filters
-    and sort are lists of JSON objects. segments can be product, country, or
+    'ad_group', or 'ad', pass entity_id. time_range is ONE JSON object; the API
+    does not support multiple ranges per request, so compare periods with
+    separate calls. Prefer a date_range in the ad account's timezone (call
+    get_account to read it), for example
+    {"type":"date_range","since":"2026-10-12","until":"2026-10-19","timezone":"Asia/Kolkata"}.
+    A unix_range ({"type":"unix_range","start":...,"end":...}) must start on a
+    full hour in the account timezone, or the API rejects it. filters and sort
+    are lists of JSON objects. segments can be product, country, or
     device, with at most one segment per request.
 
     Args:
         scope: account, campaign, ad_group, or ad.
         entity_id: Required for non-account scopes.
         time_granularity: hourly, daily, monthly, or none. Default daily.
-        time_range: Optional JSON object for unix_range, hour_range, or date_range.
+        time_range: Optional single JSON object for date_range (recommended, account timezone), unix_range, or hour_range.
         segments: Optional segment list: product, country, or device.
         fields: Optional list of fields, such as campaign.id or metadata.readable_time.
         filters: Optional list of JSON filter objects.
@@ -166,7 +159,7 @@ async def get_insights(
     path, path_err = _insights_path(scope, entity_id)
     if path_err:
         return path_err
-    time_ranges, time_err = _one_time_range(time_range)
+    time_ranges, time_err = _time_ranges(time_range)
     if time_err:
         return time_err
     segment_values, segments_err = _coerce_string_list(segments, "segments")
@@ -250,4 +243,4 @@ async def get_insights(
         return _err(e)
 
 
-__all__ = ("get_insights",)
+__all__ = ("get_insights", "_normalize_time_range")

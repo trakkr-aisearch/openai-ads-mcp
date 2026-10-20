@@ -97,7 +97,11 @@ Optional environment variables:
 | `OPENAI_ADS_API_KEY` | Required bearer key for `https://api.ads.openai.com/v1`. |
 | `OPENAI_ADS_API_BASE_URL` | Optional HTTPS override for tests or proxies. |
 | `OPENAI_ADS_MCP_READONLY` | Set to `1` or `true` to register read tools only. |
-| `OPENAI_ADS_BUDGET_CEILING_USD` | Optional budget guard. Default `100`. |
+| `OPENAI_ADS_MCP_TOOLS` | Comma-separated write tool names. When set, only those write tools are registered (read tools always are). `OPENAI_ADS_MCP_READONLY` still wins. |
+| `OPENAI_ADS_BUDGET_CEILING` | Optional total-spend guard, in the ad account's currency (major units). Default `100`. Falls back to the legacy `OPENAI_ADS_BUDGET_CEILING_USD` (logs a deprecation warning). `off` (any case) removes the ceiling and the `end_time` rule; the amount must still be finite and at least `1`. |
+| `OPENAI_ADS_BID_CEILING` | Optional bid guard, in the ad account's currency (major units). Default `10`. A higher `max_bid` needs `confirm_bid=True`. `off` (any case) removes the ceiling. |
+| `OPENAI_ADS_ALLOW_LOCAL_FILES` | Set to `1` to let `upload_creative` and `manage_audience` read `file_path` from the server's disk. Off by default; send `file_content_base64` (or `image_url` / `file_id`) instead. |
+| `OPENAI_ADS_ENABLE_FEED_WRITES` | Set to `1` to list `update_product_feed_products`. Off by default because the feed price unit is unverified. |
 
 ## Discovery Metadata
 
@@ -246,7 +250,7 @@ The production runbook is in `HOSTED_DEPLOY.md`.
 
 ## Tool Surface
 
-The Python and Node runtimes expose the same 27 tools.
+The upstream manifest lists 27 tools. This fork's Python runtime adds `get_conversions`, `set_ad_account_state`, `update_ad_account_brand`, the daily spend limit tools (`get_spend_limits`, `set_daily_spend_limit`, `remove_daily_spend_limit`), and `update_product_feed_products` (34 listed by default, 35 with `OPENAI_ADS_ENABLE_FEED_WRITES=1`; 15 in readonly mode).
 
 | Group | Tools |
 | --- | --- |
@@ -256,7 +260,7 @@ The Python and Node runtimes expose the same 27 tools.
 | Ads | `list_ads`, `get_ad`, `upload_creative`, `create_ad`, `update_ad`, `set_ad_state` |
 | Insights | `get_insights` |
 | Audiences | `list_audiences`, `get_audience`, `search_geo`, `manage_audience` |
-| Conversions | `manage_conversions`, `send_conversions` |
+| Conversions | `get_conversions` (read), `manage_conversions`, `send_conversions` |
 | Helpers | `build_campaign`, `draft_context_hints`, `bulk_ab_test_hints` |
 
 ### High-use tools
@@ -298,8 +302,8 @@ This server can affect real ad spend, so the defaults are deliberately cautious.
 
 1. Create tools default to paused. `build_campaign` creates every object paused.
 2. Activations are separate tools: `set_campaign_state`, `set_ad_group_state`, and `set_ad_state`.
-3. Budget-setting paths enforce `OPENAI_ADS_BUDGET_CEILING_USD`, default `100`.
-4. To exceed the ceiling, pass `confirm_budget=True`.
+3. Budgets (`lifetime_budget`, `daily_budget`) are amounts in the ad account's currency, major units (`500` = ₹500 on an INR account, $500 on a USD account; `get_account` shows the currency). Set one or the other, not both. `OPENAI_ADS_BUDGET_CEILING` (default `100` in that currency) caps total spend: a `lifetime_budget` above it, or a `daily_budget` with no `end_time` or whose daily amount × days until `end_time` exceeds it, needs `confirm_budget=True`. Ad group bids (`max_bid`) use the same currency and units; above `OPENAI_ADS_BID_CEILING` (default `10`) they need `confirm_bid=True`.
+4. Bidding edits read the ad group first and resend its current strategy, bid and audience multipliers for whatever you leave out, so changing one never resets the others. Creates send an `Idempotency-Key` (generated when you pass none). Ids that would change the request path (`..`, `?`, `#`) are refused before anything is sent.
 5. `OPENAI_ADS_MCP_READONLY=1` hides every write tool entirely.
 6. Conversion ingest validates at most 1000 events per call, timestamps no older than 7 days, and timestamps no more than 10 minutes in the future.
 7. Use `validate_only=true` to validate a conversion batch without ingesting it.
@@ -330,8 +334,8 @@ Use draft_context_hints for "AI visibility monitoring software" aimed at growth 
 
 Then call build_campaign with:
 - name: "AI visibility category test"
-- budget_usd: 50
-- ad_group: name "Growth teams", billing_event "click", max_bid_usd 1.25, context_hints from the draft
+- lifetime_budget: 50 (in the ad account's currency)
+- ad_group: name "Growth teams", billing_event "click", max_bid 1.25, context_hints from the draft
 - ads: two chat_card variants using my uploaded file_id
 
 Do not activate anything.

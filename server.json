@@ -48,8 +48,8 @@
           "default": "1"
         },
         {
-          "name": "OPENAI_ADS_BUDGET_CEILING_USD",
-          "description": "Optional budget guard for spend-changing tools. Defaults to 100.",
+          "name": "OPENAI_ADS_BUDGET_CEILING",
+          "description": "Optional budget guard for spend-changing tools, in the ad account's currency (major units). Defaults to 100. Legacy OPENAI_ADS_BUDGET_CEILING_USD is still read as a fallback.",
           "format": "number",
           "default": "100"
         }
@@ -78,8 +78,8 @@
           "default": "1"
         },
         {
-          "name": "OPENAI_ADS_BUDGET_CEILING_USD",
-          "description": "Optional budget guard for spend-changing tools. Defaults to 100.",
+          "name": "OPENAI_ADS_BUDGET_CEILING",
+          "description": "Optional budget guard for spend-changing tools, in the ad account's currency (major units). Defaults to 100. Legacy OPENAI_ADS_BUDGET_CEILING_USD is still read as a fallback.",
           "format": "number",
           "default": "100"
         }

@@ -6,9 +6,10 @@ import re
 from ipaddress import ip_address
 
 from ._core import *
+from .tools_insights import _normalize_time_range
 
 _ACTION_SOURCES = {"web", "mobile_app", "offline", "physical_store", "phone_call", "email", "other"}
-_CONVERSION_READ_ACTIONS = {"get_event_settings", "get_insights"}
+_CONVERSION_AGGREGATION_LEVELS = {"campaign", "ad_group", "ad"}
 _SUPPORTED_EVENT_DATA_TYPES = {
     "app_installed": "customer_action",
     "app_opened": "customer_action",
@@ -47,17 +48,10 @@ def _source_ids_payload(source_ids: Any) -> tuple[list[str] | None, str | None]:
     return ids, None
 
 
-@ads_tool(writes=True, open_world=True)
-@readonly_actions(*_CONVERSION_READ_ACTIONS)
-async def manage_conversions(
-    action: Literal["create_pixel", "create_api_key", "get_event_settings", "set_event_settings", "get_insights"],
-    name: str | None = None,
-    client_type: Literal["web"] = "web",
-    event_type: str | None = None,
-    custom_event_name: str | None = None,
-    attribution_window_days: int | None = None,
-    source_ids: Any = None,
-    aggregation_level: str | None = None,
+@ads_tool(open_world=True)
+async def get_conversions(
+    action: Literal["get_event_settings", "get_insights"],
+    aggregation_level: Literal["campaign", "ad_group", "ad"] | None = None,
     time_ranges: Any = None,
     entity_ids: Any = None,
     limit: int = 20,
@@ -65,19 +59,82 @@ async def manage_conversions(
     before: str | None = None,
     order: Literal["asc", "desc"] = "desc",
 ) -> str:
-    """Manage conversion setup and conversion reporting.
+    """Read conversion setup and conversion reporting. Never changes the account.
+
+    Actions:
+    - get_event_settings: GET /conversions/event_settings (paged with limit, after, before, order).
+    - get_insights: POST /conversions/insights (a read despite the POST). Requires
+      aggregation_level (campaign, ad_group, or ad) and time_ranges. Pass
+      entity_ids for per-entity rows; omit it for one total across the account
+      (sent as group_by_entity=false, which the API requires without entity_ids).
+
+    time_ranges is a list of range objects (or JSON strings). Prefer a date_range
+    in the ad account's timezone (call get_account to read it), for example
+    {"type":"date_range","since":"2026-10-12","until":"2026-10-19","timezone":"Asia/Kolkata"}.
+    """
+    client, client_err = _get_client_or_error()
+    if client_err:
+        return client_err
+    try:
+        if action == "get_event_settings":
+            if limit_err := _validate_int_range("limit", limit, 1, 500):
+                return limit_err
+            params = _optional_params(limit=limit, after=after, before=before, order=order)
+            return _ok(await client.get("/conversions/event_settings", params=params))
+        if action == "get_insights":
+            if aggregation_level is None:
+                return _bad_request("aggregation_level is required for get_insights: campaign, ad_group, or ad.")
+            if level_err := _validate_option("aggregation_level", aggregation_level, _CONVERSION_AGGREGATION_LEVELS):
+                return level_err
+            if isinstance(time_ranges, dict) or (isinstance(time_ranges, str) and time_ranges.strip().startswith("{")):
+                time_ranges = [time_ranges]
+            items, ranges_err = _coerce_list(time_ranges, "time_ranges")
+            if ranges_err:
+                return ranges_err
+            if not items:
+                return _bad_request("time_ranges is required for get_insights.")
+            ranges = []
+            for item in items:
+                time_range, range_err = _coerce_mapping(item, "time_ranges item")
+                if range_err:
+                    return range_err
+                time_range, range_err = _normalize_time_range(time_range)
+                if range_err:
+                    return range_err
+                ranges.append(json.dumps(time_range, separators=_COMPACT_SEPARATORS))
+            ids, ids_err = _coerce_string_list(entity_ids, "entity_ids")
+            if ids_err:
+                return ids_err
+            body: dict[str, Any] = {"aggregation_level": aggregation_level, "time_ranges": ranges}
+            if ids:
+                body["entity_ids"] = ids
+            else:
+                # The API defaults group_by_entity to true, then 400s with "entity_ids must be provided".
+                body["group_by_entity"] = False
+            return _ok(await client.post("/conversions/insights", json=body))
+        return _bad_request(f"Unknown action: {action}")
+    except OpenAIAdsAPIError as e:
+        return _err(e)
+
+
+@ads_tool(writes=True, open_world=True)
+async def manage_conversions(
+    action: Literal["create_pixel", "create_api_key", "set_event_settings"],
+    name: str | None = None,
+    client_type: Literal["web"] = "web",
+    event_type: str | None = None,
+    custom_event_name: str | None = None,
+    attribution_window_days: int | None = None,
+    source_ids: Any = None,
+) -> str:
+    """Change conversion setup. For reads use get_conversions.
 
     Actions:
     - create_pixel: POST /conversions/pixels. Requires name.
     - create_api_key: POST /conversions/api_keys. Requires name.
-    - get_event_settings: GET /conversions/event_settings.
     - set_event_settings: POST /conversions/event_settings. Requires name,
       event_type, attribution_window_days, and source_ids.
-    - get_insights: POST /conversions/insights. Requires aggregation_level,
-      time_ranges, and entity_ids.
     """
-    if is_readonly_mode() and action not in _CONVERSION_READ_ACTIONS:
-        return _bad_request("OPENAI_ADS_MCP_READONLY=1 permits only get_event_settings and get_insights for manage_conversions.")
     client, client_err = _get_client_or_error()
     if client_err:
         return client_err
@@ -90,11 +147,6 @@ async def manage_conversions(
             if name_err := _validate_non_empty("name", name, minimum=3, maximum=1000):
                 return name_err
             return _ok(await client.post("/conversions/api_keys", json={"name": name}))
-        if action == "get_event_settings":
-            if limit_err := _validate_int_range("limit", limit, 1, 500):
-                return limit_err
-            params = _optional_params(limit=limit, after=after, before=before, order=order)
-            return _ok(await client.get("/conversions/event_settings", params=params))
         if action == "set_event_settings":
             if name_err := _validate_non_empty("name", name, minimum=1, maximum=1000):
                 return name_err
@@ -122,21 +174,6 @@ async def manage_conversions(
             if custom_event_name:
                 body["custom_event_name"] = custom_event_name
             return _ok(await client.post("/conversions/event_settings", json=body))
-        if action == "get_insights":
-            if level_err := _validate_non_empty("aggregation_level", aggregation_level, minimum=1, maximum=100):
-                return level_err
-            ranges, ranges_err = _coerce_string_list(time_ranges, "time_ranges")
-            if ranges_err:
-                return ranges_err
-            ids, ids_err = _coerce_string_list(entity_ids, "entity_ids")
-            if ids_err:
-                return ids_err
-            if not ranges or not ids:
-                return _bad_request("time_ranges and entity_ids are required for get_insights.")
-            return _ok(await client.post(
-                "/conversions/insights",
-                json={"aggregation_level": aggregation_level, "time_ranges": ranges, "entity_ids": ids},
-            ))
         return _bad_request(f"Unknown action: {action}")
     except OpenAIAdsAPIError as e:
         return _err(e)
@@ -301,4 +338,4 @@ async def send_conversions(pixel_id: str, events: Any, validate_only: bool = Fal
         return _err(e)
 
 
-__all__ = ("manage_conversions", "send_conversions", "_validate_conversion_events")
+__all__ = ("get_conversions", "manage_conversions", "send_conversions", "_validate_conversion_events")
